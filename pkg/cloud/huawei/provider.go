@@ -40,6 +40,11 @@ type Huawei struct {
 	// DownloadPricingData attempt, used to rate-limit it (see tryRefreshPricing).
 	lastPricingRefresh atomic.Int64
 
+	// lbBills caches what BSS billed for each load balancer, which is how
+	// ServiceLoadBalancerPricing prices a Service bound to an existing ELB
+	// (see loadbalancer.go).
+	lbBills lbBillCache
+
 	BaseCPUPrice string
 	BaseRAMPrice string
 	BaseGPUPrice string

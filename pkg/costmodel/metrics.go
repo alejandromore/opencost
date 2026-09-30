@@ -288,7 +288,7 @@ func initCostModelMetrics(clusterInfo clusters.ClusterInfoProvider, metricsConfi
 		lbCostGv = prometheus.NewGaugeVec(prometheus.GaugeOpts{ // no differentiation between ELB and ALB right now
 			Name: "kubecost_load_balancer_cost",
 			Help: "kubecost_load_balancer_cost Hourly cost of load balancer",
-		}, []string{"ingress_ip", "namespace", "service_name", "uid"}) // assumes one ingress IP per load balancer
+		}, []string{"ingress_ip", "namespace", "service_name", "uid", "provider_id"}) // assumes one ingress IP per load balancer
 		if _, disabled := disabledMetrics["kubecost_load_balancer_cost"]; !disabled {
 			toRegisterGV = append(toRegisterGV, lbCostGv)
 		}
@@ -639,9 +639,9 @@ func (cmme *CostModelMetricsEmitter) Start() bool {
 				}
 				serviceKey := namespace + "/" + serviceName
 				serviceUID := serviceUIDs[serviceKey]
-				cmme.LBCostRecorder.WithLabelValues(ingressIP, namespace, serviceName, serviceUID).Set(lb.Cost)
+				cmme.LBCostRecorder.WithLabelValues(ingressIP, namespace, serviceName, serviceUID, lb.ProviderID).Set(lb.Cost)
 
-				labelKey := getKeyFromLabelStrings(ingressIP, namespace, serviceName, serviceUID)
+				labelKey := getKeyFromLabelStrings(ingressIP, namespace, serviceName, serviceUID, lb.ProviderID)
 				loadBalancerSeen[labelKey] = true
 			}
 

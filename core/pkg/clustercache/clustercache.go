@@ -68,6 +68,10 @@ type Service struct {
 	Type         v1.ServiceType
 	Status       v1.ServiceStatus
 	ClusterIP    string
+	// Annotations carry cloud-specific load balancer settings (e.g. the ID of
+	// a pre-existing load balancer a Service binds to), which providers need
+	// to price the Service's load balancer individually.
+	Annotations map[string]string
 }
 
 type DaemonSet struct {
@@ -310,6 +314,7 @@ func TransformService(input *v1.Service) *Service {
 		Type:         input.Spec.Type,
 		Status:       input.Status,
 		ClusterIP:    input.Spec.ClusterIP,
+		Annotations:  input.Annotations,
 	}
 }
 

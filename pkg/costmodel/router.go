@@ -563,6 +563,10 @@ func Initialize(router *httprouter.Router, additionalConfigWatchers ...*watcher.
 		panic(fatalErr)
 	}
 
+	if pds, ok := dataSource.(*prom.PrometheusDataSource); ok {
+		registerHuaweiKubernetesResources(pds)
+	}
+
 	clusterMap := dataSource.ClusterMap()
 	settingsCache := cache.New(cache.NoExpiration, cache.NoExpiration)
 

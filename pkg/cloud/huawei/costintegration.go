@@ -69,6 +69,8 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 		return ccsr, nil
 	}
 
+	k8sResources := kubernetesResourcesIn(start, end)
+
 	for _, row := range rows {
 		resourceID := dimensionValue(row.Dimensions, "RESOURCE_ID")
 		serviceType := dimensionValue(row.Dimensions, "CLOUD_SERVICE_TYPE")
@@ -103,6 +105,13 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 			continue
 		}
 
+		// A node's ECS instance, a PV's EVS volume or a Service's ELB is also
+		// in Kubernetes allocation; mark it so the two are not added up.
+		kubernetesPercent := 0.0
+		if k8sResources.covers(resourceID) {
+			kubernetesPercent = 1.0
+		}
+
 		for _, item := range *row.Costs {
 			winStart, ok := parseCostDay(item.TimeDimensionValue, start)
 			if !ok {
@@ -119,25 +128,8 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 				return nil, fmt.Errorf("parsing huawei cloud official cost amount: %w", err)
 			}
 
-			cc := &opencost.CloudCost{
-				Properties: properties,
-				Window:     opencost.NewWindow(&winStart, &winEnd),
-				ListCost: opencost.CostMetric{
-					Cost: listAmount,
-				},
-				NetCost: opencost.CostMetric{
-					Cost: netAmount,
-				},
-				AmortizedNetCost: opencost.CostMetric{
-					Cost: netAmount,
-				},
-				AmortizedCost: opencost.CostMetric{
-					Cost: listAmount,
-				},
-				InvoicedCost: opencost.CostMetric{
-					Cost: netAmount,
-				},
-			}
+			cc := opencost.NewCloudCost(winStart, winEnd, properties, kubernetesPercent,
+				listAmount, netAmount, netAmount, netAmount, listAmount)
 
 			ccsr.LoadCloudCost(cc)
 		}

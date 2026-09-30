@@ -1360,6 +1360,7 @@ func (cm *CostModel) GetLBCost() (map[serviceKey]*costAnalyzerCloud.LoadBalancer
 	// 	return nil, err
 	// }
 	cp := cm.Provider
+	servicePricer, pricesPerService := cp.(costAnalyzerCloud.ServiceLoadBalancerPricer)
 	servicesList := cm.Cache.GetAllServices()
 	loadBalancerMap := make(map[serviceKey]*costAnalyzerCloud.LoadBalancer)
 
@@ -1373,7 +1374,13 @@ func (cm *CostModel) GetLBCost() (map[serviceKey]*costAnalyzerCloud.LoadBalancer
 		}
 
 		if service.Type == "LoadBalancer" {
-			loadBalancer, err := cp.LoadBalancerPricing()
+			var loadBalancer *costAnalyzerCloud.LoadBalancer
+			var err error
+			if pricesPerService {
+				loadBalancer, err = servicePricer.ServiceLoadBalancerPricing(service)
+			} else {
+				loadBalancer, err = cp.LoadBalancerPricing()
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -1382,7 +1389,26 @@ func (cm *CostModel) GetLBCost() (map[serviceKey]*costAnalyzerCloud.LoadBalancer
 			loadBalancerMap[key] = &newLoadBalancer
 		}
 	}
+	splitSharedLoadBalancers(loadBalancerMap)
 	return loadBalancerMap, nil
+}
+
+// splitSharedLoadBalancers divides the cost of a cloud load balancer evenly
+// between the Services bound to it, so that a load balancer shared by N
+// Services is counted once rather than N times. Load balancers without a
+// ProviderID cannot be told apart and are left untouched.
+func splitSharedLoadBalancers(loadBalancers map[serviceKey]*costAnalyzerCloud.LoadBalancer) {
+	sharers := make(map[string]int)
+	for _, lb := range loadBalancers {
+		if lb.ProviderID != "" {
+			sharers[lb.ProviderID]++
+		}
+	}
+	for _, lb := range loadBalancers {
+		if n := sharers[lb.ProviderID]; lb.ProviderID != "" && n > 1 {
+			lb.Cost /= float64(n)
+		}
+	}
 }
 
 func getPodServices(cache clustercache.ClusterCache, podList []*clustercache.Pod, clusterID string) (map[string]map[string][]string, error) {
