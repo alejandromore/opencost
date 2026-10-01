@@ -97,24 +97,34 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 		if resource.Name != "" {
 			labels[ResourceNameLabel] = resource.Name
 		}
+		// The OpenCost UI breaks cloud costs down by a fixed set of properties,
+		// not by label: the Enterprise Project goes in as the account and its
+		// platform as the invoice entity, so "Account" and "Invoice Entity" in
+		// the UI split the bill by Enterprise Project and by platform.
+		accountID, accountName, invoiceEntity := projectID, "", ""
 		if epID, ok := enterpriseProjects[resource.ID]; ok {
 			ep := ci.enterpriseProject(epID)
 			labels[EnterpriseProjectIDLabel] = ep.ID
 			labels[EnterpriseProjectLabel] = ep.Name
+			accountID, accountName = ep.Name, ep.Name
 			if ep.Platform != "" {
 				labels[PlatformLabel] = ep.Platform
+				invoiceEntity = ep.Platform
 			}
 		}
 		priceFactor := ci.priceFactor(serviceCodeOf(resource.ID), resource.Type)
 
 		properties := &opencost.CloudCostProperties{
-			ProviderID: resource.ID,
-			Provider:   opencost.HuaweiProvider,
-			AccountID:  projectID,
-			RegionID:   region,
-			Service:    serviceType,
-			Category:   selectHuaweiCategory(serviceType),
-			Labels:     labels,
+			ProviderID:        resource.ID,
+			Provider:          opencost.HuaweiProvider,
+			AccountID:         accountID,
+			AccountName:       accountName,
+			InvoiceEntityID:   invoiceEntity,
+			InvoiceEntityName: invoiceEntity,
+			RegionID:          region,
+			Service:           serviceType,
+			Category:          selectHuaweiCategory(serviceType),
+			Labels:            labels,
 		}
 
 		if row.Costs == nil {

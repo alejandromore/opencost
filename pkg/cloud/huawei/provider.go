@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -142,12 +143,28 @@ func (k *huaweiPVKey) Features() string {
 }
 
 func (h *Huawei) GetPVKey(pv *clustercache.PersistentVolume, parameters map[string]string, defaultRegion string) models.PVKey {
-	return &huaweiPVKey{
+	k := &huaweiPVKey{
 		Labels:                 pv.Labels,
 		StorageClassName:       pv.Spec.StorageClassName,
 		StorageClassParameters: parameters,
 		Region:                 defaultRegion,
 	}
+	// The everest CSI driver's volume handle is the EVS volume ID, which is
+	// how the bill identifies the disk: as the PV's provider ID it lets cloud
+	// costs mark the disk's billing rows as already counted by Kubernetes.
+	if pv.Spec.CSI != nil {
+		k.ProviderID = pv.Spec.CSI.VolumeHandle
+	}
+	return k
+}
+
+// NodeProviderID reports a CCE node under its ECS instance ID, which is how
+// the bill identifies the machine. CCE sets spec.providerID to the CCE node
+// ID instead; the ECS instance ID is the node's system UUID (the everest CSI
+// driver uses the same value as its node ID). Confirmed on a live CCE v1.35
+// cluster.
+func (h *Huawei) NodeProviderID(node *clustercache.Node) string {
+	return strings.ToLower(strings.TrimSpace(node.Status.NodeInfo.SystemUUID))
 }
 
 // DownloadPricingData loads the static default pricing from the huawei.json config

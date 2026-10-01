@@ -1004,6 +1004,11 @@ func (cm *CostModel) GetNodeCost() (map[string]*costAnalyzerCloud.Node, error) {
 			newCnode.ArchType = arch
 		}
 		newCnode.ProviderID = n.SpecProviderID
+		if resolver, ok := cp.(costAnalyzerCloud.NodeProviderIDResolver); ok {
+			if id := resolver.NodeProviderID(n); id != "" {
+				newCnode.ProviderID = id
+			}
+		}
 
 		var cpu float64
 		if newCnode.VCPU == "" {

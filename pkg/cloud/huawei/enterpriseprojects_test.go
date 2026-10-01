@@ -199,6 +199,12 @@ func TestCostIntegration_GetCloudCost_EnterpriseProjectsAndPriceFactors(t *testi
 				t.Fatalf("unexpected resource %q", labels[ResourceNameLabel])
 			}
 			seen++
+			// The UI breaks down by account (Enterprise Project) and invoice
+			// entity (platform), not by label.
+			if cc.Properties.AccountID != w.epName || cc.Properties.InvoiceEntityID != w.platform {
+				t.Errorf("%s: account %q invoice entity %q, want %q / %q", labels[ResourceNameLabel],
+					cc.Properties.AccountID, cc.Properties.InvoiceEntityID, w.epName, w.platform)
+			}
 			if labels[EnterpriseProjectIDLabel] != w.epID || labels[EnterpriseProjectLabel] != w.epName || labels[PlatformLabel] != w.platform {
 				t.Errorf("%s: labels %v, want ep %q/%q platform %q", labels[ResourceNameLabel], labels, w.epID, w.epName, w.platform)
 			}

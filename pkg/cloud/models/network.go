@@ -36,3 +36,12 @@ type LoadBalancer struct {
 type ServiceLoadBalancerPricer interface {
 	ServiceLoadBalancerPricing(service *clustercache.Service) (*LoadBalancer, error)
 }
+
+// NodeProviderIDResolver is implemented by providers whose bill identifies a
+// node's machine by something other than the node's spec.providerID. The cost
+// model reports the node under the returned ID (the provider_id label of the
+// node cost metrics), so that cloud costs can match the node's billing rows.
+// An empty return keeps spec.providerID.
+type NodeProviderIDResolver interface {
+	NodeProviderID(node *clustercache.Node) string
+}
