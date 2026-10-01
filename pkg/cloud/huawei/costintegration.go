@@ -71,6 +71,13 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 
 	k8sResources := kubernetesResourcesIn(start, end)
 
+	// Without Enterprise Projects the bill cannot be split by platform, but it
+	// is still correct, so a failure here is not fatal.
+	enterpriseProjects, err := fetchResourceEnterpriseProjects(beginTime, endTime)
+	if err != nil {
+		log.Warnf("huawei cloud cost: reporting costs without Enterprise Projects, the lookup failed: %v", err)
+	}
+
 	for _, row := range rows {
 		resourceID := dimensionValue(row.Dimensions, "RESOURCE_ID")
 		serviceType := dimensionValue(row.Dimensions, "CLOUD_SERVICE_TYPE")
@@ -90,6 +97,15 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 		if resource.Name != "" {
 			labels[ResourceNameLabel] = resource.Name
 		}
+		if epID, ok := enterpriseProjects[resource.ID]; ok {
+			ep := ci.enterpriseProject(epID)
+			labels[EnterpriseProjectIDLabel] = ep.ID
+			labels[EnterpriseProjectLabel] = ep.Name
+			if ep.Platform != "" {
+				labels[PlatformLabel] = ep.Platform
+			}
+		}
+		priceFactor := ci.priceFactor(serviceCodeOf(resource.ID), resource.Type)
 
 		properties := &opencost.CloudCostProperties{
 			ProviderID: resource.ID,
@@ -127,6 +143,8 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 			if err != nil {
 				return nil, fmt.Errorf("parsing huawei cloud official cost amount: %w", err)
 			}
+
+			netAmount *= priceFactor
 
 			cc := opencost.NewCloudCost(winStart, winEnd, properties, kubernetesPercent,
 				listAmount, netAmount, netAmount, netAmount, listAmount)

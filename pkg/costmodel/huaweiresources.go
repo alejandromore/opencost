@@ -10,14 +10,16 @@ import (
 )
 
 // huaweiKubernetesResourcesQuery lists the provider IDs of every node,
-// persistent volume and load balancer the cost model priced in a window --
+// persistent volume, load balancer and CCE cluster the cost model priced in a
+// window --
 // the resources whose billing rows Huawei CostIntegration must mark as already
 // counted by Kubernetes allocation. It is evaluated at the window end, over
 // the window's duration, and spans every cluster in the data source, which is
 // what a hub collecting several clusters needs.
 const huaweiKubernetesResourcesQuery = `group by (provider_id) (last_over_time(node_total_hourly_cost[%[1]s]))
 or group by (provider_id) (last_over_time(pv_hourly_cost[%[1]s]))
-or group by (provider_id) (last_over_time(kubecost_load_balancer_cost{provider_id!=""}[%[1]s]))`
+or group by (provider_id) (last_over_time(kubecost_load_balancer_cost{provider_id!=""}[%[1]s]))
+or group by (provider_id) (last_over_time(kubecost_cluster_info{provider_id!=""}[%[1]s]))`
 
 // promHuaweiKubernetesResources implements huawei.KubernetesResourceSource on
 // the Prometheus data source the cost model already queries.

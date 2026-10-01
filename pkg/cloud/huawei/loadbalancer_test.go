@@ -36,7 +36,7 @@ func approxEqual(a, b float64) bool {
 	return math.Abs(a-b) < 1e-9
 }
 
-func TestLoadBalancerIDFromResourceID(t *testing.T) {
+func TestBilledResourceID(t *testing.T) {
 	cases := []struct {
 		name, resourceID, wantID string
 		wantOK                   bool
@@ -49,7 +49,7 @@ func TestLoadBalancerIDFromResourceID(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, ok := loadBalancerIDFromResourceID(tc.resourceID)
+			id, ok := billedResourceID(tc.resourceID)
 			if id != tc.wantID || ok != tc.wantOK {
 				t.Fatalf("got (%q, %v), want (%q, %v)", id, ok, tc.wantID, tc.wantOK)
 			}
@@ -57,7 +57,7 @@ func TestLoadBalancerIDFromResourceID(t *testing.T) {
 	}
 }
 
-func TestLoadBalancerHourlyCosts(t *testing.T) {
+func TestBilledHourlyCosts(t *testing.T) {
 	rows := []bssintlmodel.CostDataByDimension{
 		// Billed for three days; the first (partial) day is dropped.
 		costRow(elbResourceID(testELBID, "elb-aiops-prod"), map[string]string{
@@ -80,7 +80,7 @@ func TestLoadBalancerHourlyCosts(t *testing.T) {
 		}),
 	}
 
-	hourly := loadBalancerHourlyCosts(rows)
+	hourly := billedHourlyCosts(rows)
 
 	// (4.80 + 4.80) / (2 days * 24h)
 	if got := hourly[testELBID]; !approxEqual(got, 0.2) {
@@ -104,8 +104,8 @@ func newLBTestProvider(t *testing.T) *Huawei {
 
 func TestServiceLoadBalancerPricing_BilledELB(t *testing.T) {
 	h := newLBTestProvider(t)
-	h.lbBills.hourly = map[string]float64{testELBID: 0.2}
-	h.lbBills.nextFetch = time.Now().Add(time.Hour)
+	h.bills.hourly = map[string]float64{testELBID: 0.2}
+	h.bills.nextFetch = time.Now().Add(time.Hour)
 
 	svc := &clustercache.Service{Annotations: map[string]string{elbIDAnnotation: testELBID}}
 	lb, err := h.ServiceLoadBalancerPricing(svc)
@@ -119,8 +119,8 @@ func TestServiceLoadBalancerPricing_BilledELB(t *testing.T) {
 
 func TestServiceLoadBalancerPricing_UnbilledELBFallsBackToFlatRate(t *testing.T) {
 	h := newLBTestProvider(t)
-	h.lbBills.hourly = map[string]float64{}
-	h.lbBills.nextFetch = time.Now().Add(time.Hour)
+	h.bills.hourly = map[string]float64{}
+	h.bills.nextFetch = time.Now().Add(time.Hour)
 
 	svc := &clustercache.Service{Annotations: map[string]string{elbIDAnnotation: testELBID}}
 	lb, err := h.ServiceLoadBalancerPricing(svc)
