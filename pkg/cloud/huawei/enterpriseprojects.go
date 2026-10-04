@@ -23,27 +23,67 @@ const defaultEnterpriseProjectID = "0"
 // keys this integration uses (RESOURCE_ID, REGION_CODE).
 const enterpriseProjectDimension = "ENTERPRISE_PROJECT_ID"
 
+// resourceEnterpriseProjects records the Enterprise Project each resource was
+// billed to, day by day. A resource can move between Enterprise Projects (a
+// CCE node created before its pool had one, a manual migration), and BSS
+// bills each day to the Enterprise Project the resource was in that day.
+type resourceEnterpriseProjects struct {
+	byDay  map[string]map[string]string // resource ID -> day -> Enterprise Project ID
+	latest map[string]string            // resource ID -> Enterprise Project of its latest billed day
+}
+
+// lookup returns the Enterprise Project the resource was billed to on day,
+// or, for a day with no record, the one of its latest billed day.
+func (r resourceEnterpriseProjects) lookup(resourceID, day string) (string, bool) {
+	if ep, ok := r.byDay[resourceID][day]; ok {
+		return ep, true
+	}
+	ep, ok := r.latest[resourceID]
+	return ep, ok
+}
+
 // fetchResourceEnterpriseProjects maps every resource billed in [beginTime,
-// endTime] to its Enterprise Project ID.
+// endTime] to its Enterprise Project ID, per day.
 //
 // It is a query of its own because BSS caps a cost query at three group-by
-// dimensions and the main query (costQueryDimensions) already uses them. A
-// resource belongs to one Enterprise Project at a time, so grouping by just
-// resource and Enterprise Project is enough to label every row of the main
-// query.
-func fetchResourceEnterpriseProjects(beginTime, endTime string) (map[string]string, error) {
+// dimensions and the main query (costQueryDimensions) already uses them.
+// Grouping by resource and Enterprise Project returns one row per pair, with
+// the days that pair was billed: that is enough to label every cost of the
+// main query with the Enterprise Project of its own day.
+func fetchResourceEnterpriseProjects(beginTime, endTime string) (resourceEnterpriseProjects, error) {
+	projects := resourceEnterpriseProjects{byDay: map[string]map[string]string{}, latest: map[string]string{}}
 	rows, err := fetchCostAnalysedBillsBy([]string{"RESOURCE_ID", enterpriseProjectDimension}, beginTime, endTime, "ORIGINAL_COST", "NET_AMOUNT")
 	if err != nil {
-		return nil, err
+		return projects, err
 	}
-	projects := make(map[string]string, len(rows))
+	latestDay := map[string]string{}
 	for _, row := range rows {
 		resourceID := dimensionValue(row.Dimensions, "RESOURCE_ID")
 		epID := strings.TrimSpace(dimensionValue(row.Dimensions, enterpriseProjectDimension))
 		if resourceID == "" || epID == "" || epID == bssNullField {
 			continue
 		}
-		projects[describeResource(resourceID).ID] = epID
+		id := describeResource(resourceID).ID
+		if row.Costs == nil || len(*row.Costs) == 0 {
+			if _, ok := projects.latest[id]; !ok {
+				projects.latest[id] = epID
+			}
+			continue
+		}
+		for _, item := range *row.Costs {
+			if item.TimeDimensionValue == nil || *item.TimeDimensionValue == "" {
+				continue
+			}
+			day := *item.TimeDimensionValue
+			if projects.byDay[id] == nil {
+				projects.byDay[id] = map[string]string{}
+			}
+			projects.byDay[id][day] = epID
+			if day >= latestDay[id] {
+				latestDay[id] = day
+				projects.latest[id] = epID
+			}
+		}
 	}
 	return projects, nil
 }
