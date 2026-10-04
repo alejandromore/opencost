@@ -193,3 +193,17 @@ func TestServiceLoadBalancerPricing_ReadsBSS(t *testing.T) {
 		t.Fatalf("expected the billing history to be read once and cached, got %d requests", requests)
 	}
 }
+
+func TestIngressLoadBalancerPricing(t *testing.T) {
+	h := newLBTestProvider(t)
+	h.bills.hourly = map[string]float64{testELBID: 0.2}
+	h.bills.nextFetch = time.Now().Add(time.Hour)
+
+	lb, err := h.IngressLoadBalancerPricing(&clustercache.Ingress{Annotations: map[string]string{elbIDAnnotation: testELBID}})
+	if err != nil || lb == nil || lb.Cost != 0.2 || lb.ProviderID != testELBID {
+		t.Fatalf("expected the billed ELB price, got %+v %v", lb, err)
+	}
+	if lb, err := h.IngressLoadBalancerPricing(&clustercache.Ingress{}); err != nil || lb != nil {
+		t.Fatalf("expected no load balancer for an Ingress without elb.id, got %+v %v", lb, err)
+	}
+}

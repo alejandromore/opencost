@@ -89,6 +89,27 @@ func (h *Huawei) ServiceLoadBalancerPricing(service *clustercache.Service) (*mod
 	return &fallback, nil
 }
 
+// IngressLoadBalancerPricing prices the ELB bound to an Ingress through
+// elbIDAnnotation, the way CCE's ingress controller binds an Ingress to an
+// existing ELB, at what BSS billed for it (see ServiceLoadBalancerPricing).
+// An Ingress without the annotation has no ELB of its own: nil.
+func (h *Huawei) IngressLoadBalancerPricing(ingress *clustercache.Ingress) (*models.LoadBalancer, error) {
+	elbID := strings.TrimSpace(ingress.Annotations[elbIDAnnotation])
+	if elbID == "" {
+		return nil, nil
+	}
+	if cost, ok := h.billedHourlyCost(elbID); ok {
+		return &models.LoadBalancer{Cost: cost, ProviderID: elbID}, nil
+	}
+	lb, err := h.LoadBalancerPricing()
+	if err != nil {
+		return nil, err
+	}
+	fallback := *lb
+	fallback.ProviderID = elbID
+	return &fallback, nil
+}
+
 // ClusterManagementPricing prices the CCE cluster itself (its control plane)
 // at what BSS billed for it, the same way ServiceLoadBalancerPricing prices an
 // ELB. The cluster is identified by HUAWEICLOUD_CCE_CLUSTER_ID; without it, or

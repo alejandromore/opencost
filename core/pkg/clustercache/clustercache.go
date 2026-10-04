@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	stv1 "k8s.io/api/storage/v1"
 )
@@ -305,6 +306,47 @@ func TransformNode(input *v1.Node) *Node {
 	}
 }
 
+// Ingress is the subset of a Kubernetes Ingress the cost model uses: its
+// annotations (a cloud load balancer bound to it) and the Services it routes
+// to, which is how the load balancer's cost reaches the pods behind it.
+type Ingress struct {
+	UID             types.UID
+	Name            string
+	Namespace       string
+	Annotations     map[string]string
+	BackendServices []string
+}
+
+// TransformIngress keeps the backend Service names of an Ingress, from its
+// default backend and every path of every rule, without duplicates.
+func TransformIngress(input *networkingv1.Ingress) *Ingress {
+	seen := map[string]bool{}
+	var backends []string
+	add := func(b *networkingv1.IngressBackend) {
+		if b == nil || b.Service == nil || b.Service.Name == "" || seen[b.Service.Name] {
+			return
+		}
+		seen[b.Service.Name] = true
+		backends = append(backends, b.Service.Name)
+	}
+	add(input.Spec.DefaultBackend)
+	for _, rule := range input.Spec.Rules {
+		if rule.HTTP == nil {
+			continue
+		}
+		for i := range rule.HTTP.Paths {
+			add(&rule.HTTP.Paths[i].Backend)
+		}
+	}
+	return &Ingress{
+		UID:             input.UID,
+		Name:            input.Name,
+		Namespace:       input.Namespace,
+		Annotations:     input.Annotations,
+		BackendServices: backends,
+	}
+}
+
 func TransformService(input *v1.Service) *Service {
 	return &Service{
 		UID:          input.UID,
@@ -503,6 +545,10 @@ type ClusterCache interface {
 
 	// GetAllPodDisruptionBudgets returns all cached pod disruption budgets
 	GetAllPodDisruptionBudgets() []*PodDisruptionBudget
+
+	// GetAllIngresses returns all the cached ingresses. Ingresses are only
+	// watched when KUBERNETES_WATCH_INGRESSES is set; otherwise it is empty.
+	GetAllIngresses() []*Ingress
 
 	// GetAllReplicationControllers returns all cached replication controllers
 	GetAllReplicationControllers() []*ReplicationController

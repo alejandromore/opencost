@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	stv1 "k8s.io/api/storage/v1"
 	"k8s.io/client-go/kubernetes"
@@ -30,11 +31,13 @@ type KubernetesClusterCacheV2 struct {
 	replicaSetStore            *GenericStore[*appsv1.ReplicaSet, *cc.ReplicaSet]
 	pdbStore                   *GenericStore[*policyv1.PodDisruptionBudget, *cc.PodDisruptionBudget]
 	resourceQuotasStore        *GenericStore[*v1.ResourceQuota, *cc.ResourceQuota]
-	stopCh                     chan struct{}
+	// nil unless KUBERNETES_WATCH_INGRESSES is set
+	ingressStore *GenericStore[*networkingv1.Ingress, *cc.Ingress]
+	stopCh       chan struct{}
 }
 
 func NewKubernetesClusterCacheV2(clientset kubernetes.Interface) *KubernetesClusterCacheV2 {
-	return &KubernetesClusterCacheV2{
+	kcc := &KubernetesClusterCacheV2{
 		namespaceStore:             CreateStore(clientset.CoreV1().RESTClient(), "namespaces", cc.TransformNamespace),
 		nodeStore:                  CreateStore(clientset.CoreV1().RESTClient(), "nodes", cc.TransformNode),
 		persistentVolumeClaimStore: CreateStore(clientset.CoreV1().RESTClient(), "persistentvolumeclaims", cc.TransformPersistentVolumeClaim),
@@ -53,6 +56,10 @@ func NewKubernetesClusterCacheV2(clientset kubernetes.Interface) *KubernetesClus
 		resourceQuotasStore:        CreateStore(clientset.CoreV1().RESTClient(), "resourcequotas", cc.TransformResourceQuota),
 		stopCh:                     make(chan struct{}),
 	}
+	if env.IsKubernetesWatchIngresses() {
+		kcc.ingressStore = CreateStore(clientset.NetworkingV1().RESTClient(), "ingresses", cc.TransformIngress)
+	}
+	return kcc
 }
 
 func (kcc *KubernetesClusterCacheV2) Run() {
@@ -60,6 +67,10 @@ func (kcc *KubernetesClusterCacheV2) Run() {
 
 	if env.HasKubernetesResourceAccess() {
 		wg.Add(16)
+		if kcc.ingressStore != nil {
+			wg.Add(1)
+			kcc.ingressStore.Watch(kcc.stopCh, wg.Done)
+		}
 		kcc.namespaceStore.Watch(kcc.stopCh, wg.Done)
 		kcc.nodeStore.Watch(kcc.stopCh, wg.Done)
 		kcc.persistentVolumeClaimStore.Watch(kcc.stopCh, wg.Done)
@@ -98,6 +109,13 @@ func (kcc *KubernetesClusterCacheV2) GetAllNodes() []*cc.Node {
 
 func (kcc *KubernetesClusterCacheV2) GetAllPods() []*cc.Pod {
 	return kcc.podStore.GetAll()
+}
+
+func (kcc *KubernetesClusterCacheV2) GetAllIngresses() []*cc.Ingress {
+	if kcc.ingressStore == nil {
+		return nil
+	}
+	return kcc.ingressStore.GetAll()
 }
 
 func (kcc *KubernetesClusterCacheV2) GetAllServices() []*cc.Service {

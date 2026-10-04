@@ -91,6 +91,9 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 		resource := describeResource(resourceID)
 
 		labels := opencost.CloudCostLabels{}
+		if serviceType != "" {
+			labels[ServiceCodeLabel] = serviceType
+		}
 		if resource.Type != "" {
 			labels[ResourceTypeLabel] = resource.Type
 		}
@@ -122,7 +125,7 @@ func (ci *CostIntegration) GetCloudCost(start, end time.Time) (*opencost.CloudCo
 			InvoiceEntityID:   invoiceEntity,
 			InvoiceEntityName: invoiceEntity,
 			RegionID:          region,
-			Service:           serviceType,
+			Service:           serviceDisplayName(serviceType),
 			Category:          selectHuaweiCategory(serviceType),
 			Labels:            labels,
 		}

@@ -248,10 +248,13 @@ func TestCostIntegration_GetCloudCost_ResourceDetails(t *testing.T) {
 	found := false
 	for _, ccs := range ccsr.CloudCostSets {
 		for _, cc := range ccs.CloudCosts {
-			if cc.Properties == nil || cc.Properties.Service != "hws.service.type.rds" {
+			if cc.Properties == nil || cc.Properties.Service != "RDS" {
 				continue
 			}
 			found = true
+			if got := cc.Properties.Labels[ServiceCodeLabel]; got != "hws.service.type.rds" {
+				t.Errorf("expected service code label %q, got %q", "hws.service.type.rds", got)
+			}
 			if cc.Properties.Category != opencost.StorageCategory {
 				t.Errorf("expected category %q, got %q", opencost.StorageCategory, cc.Properties.Category)
 			}

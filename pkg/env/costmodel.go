@@ -21,6 +21,10 @@ const (
 
 	// We assume that Kubernetes is enabled if there is a KUBERNETES_PORT environment variable present
 	KubernetesEnabledEnvVar = "KUBERNETES_PORT"
+	// KubernetesWatchIngressesEnvVar opts in to watching Ingresses, so the
+	// cost of a cloud load balancer bound to an Ingress reaches its backend
+	// Services. Opt-in: it needs list/watch on networking.k8s.io ingresses.
+	KubernetesWatchIngressesEnvVar = "KUBERNETES_WATCH_INGRESSES"
 
 	// Cloud Provider
 	AWSAccessKeyIDEnvVar     = "AWS_ACCESS_KEY_ID"
@@ -406,6 +410,11 @@ func GetRegionOverrideList() []string {
 	}
 
 	return regionList
+}
+
+// IsKubernetesWatchIngresses reports whether Ingresses are watched.
+func IsKubernetesWatchIngresses() bool {
+	return env.GetBool(KubernetesWatchIngressesEnvVar, false)
 }
 
 func IsKubernetesEnabled() bool {

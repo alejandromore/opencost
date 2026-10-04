@@ -1,6 +1,7 @@
 package costmodel
 
 import (
+	"math"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -114,5 +115,54 @@ func TestGetLBCost_FlatRateProviderUnchanged(t *testing.T) {
 		if lb.Cost != 0.025 || lb.ProviderID != "" {
 			t.Errorf("%s: got cost %v provider %q, want the flat 0.025 and no provider", svc, lb.Cost, lb.ProviderID)
 		}
+	}
+}
+
+func (p *perServiceLBProvider) IngressLoadBalancerPricing(ing *clustercache.Ingress) (*models.LoadBalancer, error) {
+	id := ing.Annotations["lb-id"]
+	if id == "" {
+		return nil, nil
+	}
+	return &models.LoadBalancer{Cost: p.prices[id], ProviderID: id}, nil
+}
+
+// TestGetLBCost_IngressLoadBalancer reproduces Sentinel, where the ELB is bound
+// to an Ingress rather than a Service: its price must reach the Ingress's
+// backend Services, split with any Service bound to the same ELB, and be
+// counted once in total.
+func TestGetLBCost_IngressLoadBalancer(t *testing.T) {
+	cm := &CostModel{
+		Cache: &clustercache.MockClusterCache{
+			Services: []*clustercache.Service{lbService("nucleo", "pii-gateway-lb", "elb-borde")},
+			Ingresses: []*clustercache.Ingress{
+				{Name: "borde", Namespace: "borde", Annotations: map[string]string{"lb-id": "elb-borde"},
+					BackendServices: []string{"gateway", "frontend"}},
+				{Name: "sin-elb", Namespace: "borde", BackendServices: []string{"otro"}},
+			},
+		},
+		Provider: &perServiceLBProvider{
+			flatLBProvider: flatLBProvider{cost: 0.053},
+			prices:         map[string]float64{"elb-borde": 0.3},
+		},
+	}
+
+	got := lbCostsByService(t, cm)
+	want := []string{"nucleo/pii-gateway-lb", "borde/gateway", "borde/frontend"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	total := 0.0
+	for _, svc := range want {
+		lb, ok := got[svc]
+		if !ok {
+			t.Fatalf("missing %s in %v", svc, got)
+		}
+		if math.Abs(lb.Cost-0.1) > 1e-9 || lb.ProviderID != "elb-borde" {
+			t.Errorf("%s: got cost %v provider %q, want 0.1 elb-borde", svc, lb.Cost, lb.ProviderID)
+		}
+		total += lb.Cost
+	}
+	if math.Abs(total-0.3) > 1e-9 {
+		t.Fatalf("the ELB must be counted once in total: got %v, want 0.3", total)
 	}
 }

@@ -37,6 +37,15 @@ type ServiceLoadBalancerPricer interface {
 	ServiceLoadBalancerPricing(service *clustercache.Service) (*LoadBalancer, error)
 }
 
+// IngressLoadBalancerPricer is implemented by providers that can price the
+// cloud load balancer bound to an Ingress. The cost model splits that price
+// between the Ingress's backend Services, so it reaches the pods behind them
+// like the load balancer of a LoadBalancer Service does. A nil result means
+// the Ingress has no load balancer of its own to price.
+type IngressLoadBalancerPricer interface {
+	IngressLoadBalancerPricing(ingress *clustercache.Ingress) (*LoadBalancer, error)
+}
+
 // NodeProviderIDResolver is implemented by providers whose bill identifies a
 // node's machine by something other than the node's spec.providerID. The cost
 // model reports the node under the returned ID (the provider_id label of the

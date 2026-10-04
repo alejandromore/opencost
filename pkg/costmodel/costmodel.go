@@ -1394,8 +1394,42 @@ func (cm *CostModel) GetLBCost() (map[serviceKey]*costAnalyzerCloud.LoadBalancer
 			loadBalancerMap[key] = &newLoadBalancer
 		}
 	}
+	if ingressPricer, ok := cp.(costAnalyzerCloud.IngressLoadBalancerPricer); ok {
+		addIngressLoadBalancers(loadBalancerMap, cm.Cache.GetAllIngresses(), ingressPricer)
+	}
 	splitSharedLoadBalancers(loadBalancerMap)
 	return loadBalancerMap, nil
+}
+
+// addIngressLoadBalancers attributes the load balancer bound to each Ingress
+// to the Services it routes to: one entry per backend Service, all with the
+// load balancer's ProviderID, which splitSharedLoadBalancers then splits.
+// A backend that already has an entry (a LoadBalancer Service with its own
+// load balancer) keeps it. An Ingress without backends is reported under its
+// own name, so its load balancer is still counted once.
+func addIngressLoadBalancers(loadBalancers map[serviceKey]*costAnalyzerCloud.LoadBalancer, ingresses []*clustercache.Ingress, pricer costAnalyzerCloud.IngressLoadBalancerPricer) {
+	for _, ing := range ingresses {
+		lb, err := pricer.IngressLoadBalancerPricing(ing)
+		if err != nil {
+			log.Warnf("GetLBCost: pricing the load balancer of ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+			continue
+		}
+		if lb == nil {
+			continue
+		}
+		services := ing.BackendServices
+		if len(services) == 0 {
+			services = []string{"ingress/" + ing.Name}
+		}
+		for _, svc := range services {
+			key := serviceKey{Cluster: coreenv.GetClusterID(), Namespace: ing.Namespace, Service: svc}
+			if _, exists := loadBalancers[key]; exists {
+				continue
+			}
+			entry := *lb
+			loadBalancers[key] = &entry
+		}
+	}
 }
 
 // splitSharedLoadBalancers divides the cost of a cloud load balancer evenly

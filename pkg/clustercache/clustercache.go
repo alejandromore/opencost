@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	stv1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -35,7 +36,9 @@ type KubernetesClusterCache struct {
 	pdbWatch                   WatchController
 	replicationControllerWatch WatchController
 	resourceQuotasWatch        WatchController
-	stop                       chan struct{}
+	// nil unless KUBERNETES_WATCH_INGRESSES is set
+	ingressWatch WatchController
+	stop         chan struct{}
 }
 
 func initializeCache(wc WatchController, wg *sync.WaitGroup, cancel chan struct{}) {
@@ -56,6 +59,7 @@ func NewKubernetesClusterCacheV1(client kubernetes.Interface) cc.ClusterCache {
 	storageRestClient := client.StorageV1().RESTClient()
 	batchClient := client.BatchV1().RESTClient()
 	pdbClient := client.PolicyV1().RESTClient()
+	networkingClient := client.NetworkingV1().RESTClient()
 
 	installNamespace := env.GetOpencostNamespace()
 	log.Infof("NAMESPACE: %s", installNamespace)
@@ -80,11 +84,19 @@ func NewKubernetesClusterCacheV1(client kubernetes.Interface) cc.ClusterCache {
 		resourceQuotasWatch:        NewCachingWatcher(coreRestClient, "resourcequotas", &v1.ResourceQuota{}, "", fields.Everything()),
 	}
 
+	if env.IsKubernetesWatchIngresses() {
+		kcc.ingressWatch = NewCachingWatcher(networkingClient, "ingresses", &networkingv1.Ingress{}, "", fields.Everything())
+	}
+
 	// Wait for each caching watcher to initialize
 	cancel := make(chan struct{})
 	var wg sync.WaitGroup
 	if env.HasKubernetesResourceAccess() {
 		wg.Add(16)
+		if kcc.ingressWatch != nil {
+			wg.Add(1)
+			go initializeCache(kcc.ingressWatch, &wg, cancel)
+		}
 		go initializeCache(kcc.namespaceWatch, &wg, cancel)
 		go initializeCache(kcc.nodeWatch, &wg, cancel)
 		go initializeCache(kcc.podWatch, &wg, cancel)
@@ -132,6 +144,9 @@ func (kcc *KubernetesClusterCache) Run() {
 	go kcc.pdbWatch.Run(1, stopCh)
 	go kcc.replicationControllerWatch.Run(1, stopCh)
 	go kcc.resourceQuotasWatch.Run(1, stopCh)
+	if kcc.ingressWatch != nil {
+		go kcc.ingressWatch.Run(1, stopCh)
+	}
 
 	kcc.stop = stopCh
 }
@@ -170,6 +185,17 @@ func (kcc *KubernetesClusterCache) GetAllPods() []*cc.Pod {
 		pods = append(pods, cc.TransformPod(pod.(*v1.Pod)))
 	}
 	return pods
+}
+
+func (kcc *KubernetesClusterCache) GetAllIngresses() []*cc.Ingress {
+	if kcc.ingressWatch == nil {
+		return nil
+	}
+	var ingresses []*cc.Ingress
+	for _, item := range kcc.ingressWatch.GetAll() {
+		ingresses = append(ingresses, cc.TransformIngress(item.(*networkingv1.Ingress)))
+	}
+	return ingresses
 }
 
 func (kcc *KubernetesClusterCache) GetAllServices() []*cc.Service {

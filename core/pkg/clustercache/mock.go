@@ -20,9 +20,12 @@ type MockClusterCache struct {
 	PodDisruptionBudgets   []*PodDisruptionBudget
 	ReplicationControllers []*ReplicationController
 	ResourceQuotas         []*ResourceQuota
+	Ingresses              []*Ingress
 }
 
 func (m *MockClusterCache) Run()  {}
+
+func (m *MockClusterCache) GetAllIngresses() []*Ingress { return m.Ingresses }
 func (m *MockClusterCache) Stop() {}
 
 func (m *MockClusterCache) GetAllNodes() []*Node                         { return m.Nodes }
